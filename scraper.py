@@ -2,19 +2,23 @@
 
 import requests 
 from bs4 import BeautifulSoup
-import pandas
+import pandas as pd
 import argparse
+import connect
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--page_no", help="Enter the number of apges to parse", type=int)
+parser.add_argument("--page_num_max", help="Enter the number of pages to parse", type=int)
+parser.add_argument("--dbname", help="Enter the number of pages to parse", type=str)
 args = parser.parse_args()
 
 oyo_url = "https://www.oyorooms.com/hotels-in-bangalore/?page="
-page_no = args.page_no
+page_num_MAX = args.page_num_max
 scraped_info_list = []
+connect.connect(args.dbname)
 
-for page_num in range(page_no):
-    req = requests.get(oyo_url + str(page_num))
+for page_num in range(1,page_num_MAX):
+    url = oyo_url + str(page_num)
+    req = requests.get(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36 Edg/91.0.864.64"})
     content = req.content
 
     soup = BeautifulSoup(content, "html.parser")
@@ -30,19 +34,26 @@ for page_num in range(page_no):
         try:
             hotel_dict["rating"] = hotel.find("span", {"class": "hotelRating_ratingSummary"}).text
         except AttributeError:
-            pass 
+            hotel_dict["rating"] = None
 
         parent_amenities_element = hotel.find("div", {"class": "amenityWrapper"})    
 
         amenities_list = []
-        for amenity in parent_amenities_element.find_all("div", {"class": "amenityWrapper__amenity"}):
-            amenities_list.append(amenity.find("span", {"class": "d-body-sm"}).text.strip())
+        try:
+            for amenity in parent_amenities_element.find_all("div", {"class": "amenityWrapper__amenity"}):
+                amenities_list.append(amenity.find("span", {"class": "d-body-sm"}).text.strip())
+        except AttributeError:
+            pass
+
 
         hotel_dict["amenities"] = ', '.join(amenities_list[:-1])
 
         scraped_info_list.append(hotel_dict)
 
+        connect.insert_into_table(args.dbname, tuple(hotel_dict.values()))
         # print(hotel_name, hotel_address, hotel_price, hotel_rating, amenities_list)
 
-dataFrame = pandas.DataFrame(scraped_info_list)
+dataFrame = pd.DataFrame(scraped_info_list)
+print(f"{'-'*5}Creating csv file{'-'*5}")
 dataFrame.to_csv("Oyo.csv")
+connect.get_hotel_info(args.dbname)
